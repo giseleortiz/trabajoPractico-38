@@ -1,178 +1,167 @@
-const db = require('../database/models');
+const path = require("path");
+const db = require("../database/models");
 const sequelize = db.sequelize;
+const { Op } = require("sequelize");
+const moment = require("moment");
+const fetch = require("node-fetch");
 
-//Otra forma de llamar a los modelos
+//Aqui tienen otra forma de llamar a cada uno de los modelos
 const Movies = db.Movie;
+const Genres = db.Genre;
+const Actors = db.Actor;
+const baseURL = "http://www.omdbapi.com/?apikey=35f7ebd7";
 
 const moviesController = {
-    'list': (req, res) => {
-        db.Movie.findAll()
-            .then(movies => {
-                res.render('moviesList.ejs', { movies })
-            })
-    },
-    'detail': (req, res) => {
-        db.Movie.findByPk(req.params.id)
-            .then(movie => {
-                res.render('moviesDetail.ejs', { movie });
-            });
-    },
-    'new': (req, res) => {
-        db.Movie.findAll({
-            order: [
-                ['release_date', 'DESC']
-            ],
-            limit: 5
-        })
-            .then(movies => {
-                res.render('newestMovies', { movies });
-            });
-    },
-    'recomended': (req, res) => {
-        db.Movie.findAll({
-            where: {
-                rating: { [db.Sequelize.Op.gte]: 8 }
-            },
-            order: [
-                ['rating', 'DESC']
-            ]
-        })
-            .then(movies => {
-                res.render('recommendedMovies.ejs', { movies });
-            });
-    }, //Aqui debemos modificar y completar lo necesario para trabajar con el CRUD
-    add: function (req, res) {
-        db.Genre.findAll({
-            order: [
-                ['name']
-            ]
-        })
-            .then((genres) => {
-                return res.render('moviesAdd', {
-                    genres
-                })
-            })
-            .catch(error => console.log(error))
-    },
-    create: function (req, res) {
-        const { title, release_date, awards, rating, length, genre_id } = req.body
+  list: (req, res) => {
+    db.Movie.findAll({
+      include: ["genre"],
+    }).then((movies) => {
+      res.render("moviesList.ejs", { movies });
+    });
+  },
+  detail: (req, res) => {
+    db.Movie.findByPk(req.params.id, {
+      include: ["genre"],
+    }).then((movie) => {
+      res.render("moviesDetail.ejs", { movie });
+    });
+  },
+  new: (req, res) => {
+    db.Movie.findAll({
+      order: [["release_date", "DESC"]],
+      limit: 5,
+    }).then((movies) => {
+      res.render("newestMovies", { movies });
+    });
+  },
+  recomended: (req, res) => {
+    db.Movie.findAll({
+      include: ["genre"],
+      where: {
+        rating: { [db.Sequelize.Op.gte]: 8 },
+      },
+      order: [["rating", "DESC"]],
+    }).then((movies) => {
+      res.render("recommendedMovies.ejs", { movies });
+    });
+  },
+  //Aqui debo modificar para crear la funcionalidad requerida
+  buscar: async (req, res) => {
 
-        if ([title, release_date, awards, rating, length, genre_id].includes("")) {
-            db.Genre.findAll({
-                oreder: [
-                    ["name"]
-                ]
-            })
-                .then(genres => {
-                    return res.render('moviesAdd', {
-                    messageError: "Todos los campos son obligatorios",
-                    genres
-                })
-            })
-                    
-        } else {
-
-            db.Movie.create({
-                title: title.trim(),
-                release_date,
-                length: +length,
-                genre_id,
-                awards: +awards,
-                rating: +rating,
-            })
-                .then(newMovie => {
-                    console.log(newMovie);
-                    return res.redirect('/movies/detail/' + newMovie.id)
-                })
-                .catch(error => console.log(error))
-        }
-
-
-    },
-    edit: function (req, res) {
-        const genres = db.Genre.findAll({
-            order: [
-                ['name']
-            ]
-        })
-        const movie = db.Movie.findByPk(req.params.id)
-
-        Promise.all([genres, movie])
-            .then(([genres, movie]) => {
-                console.log(movie.release_date)
-                return res.render('moviesEdit', {
-                    genres,
-                    movie
-                })
-            })
-            .catch(error => console.log(error))
-    },
-    update: function (req, res) {
-        // TODO
-        const {title,release_date,length,genre_id,awards,rating} = req.body;
-
-
-        if ([title, release_date, awards, rating, length, genre_id].includes("")) {
-            db.Genre.findAll({
-                oreder: [
-                    ["name"]
-                ]
-            })
-                .then(genres => {
-                    return res.render('moviesAdd', {
-                    messageError: "Todos los campos son obligatorios",
-                    genres
-                })
-            })
-                    
-        } else {
-
-            db.Movie.update(
-                {
-                    title: title.trim(),
-                    release_date,
-                    length: +length,
-                    genre_id,
-                    awards: +awards,
-                    rating: +rating,
-                },
-                {
-                    where : {
-                        id : req.params.id
-                    }
-                }
-            )
-                .then(movieUpdated => {
-                    console.log(movieUpdated)
-                    return res.redirect('/movies/detail/' + req.params.id)
-                })
-                .catch(error => console.log(error))
-        }
-        
-    },
-    delete: function (req, res) {
-        // TODO
-        db.Movie.findByPk(req.params.id)
-            .then(movie => {
-                return res.render('moviesDelete', {
-                    movie
-                })
-            })
-    },
-    destroy: function (req, res) {
-        // TODO
-        db.Movie.destroy({
+    try {
+        const movie = await db.Movie.findOne({
             where : {
-                id : req.params.id
+                title : {
+                    [Op.substring] : req.body.titulo
+                }
             }
         })
-            .then(movieDeleted => {
-                console.log(movieDeleted)
-                return res.redirect('/movie/list')
-            })
-            .catch(error=> console.log(error))
+
+        if(movie){
+           return res.render("moviesDetail", {
+          movie
+        }) 
+        }else{
+          const response = await fetch(`${baseURL}&t=${req.body.titulo}`)
+          const movie = await response.json()
+          return res.render('moviesDetailOmdb',{
+            movie
+          })
+        }
+
+       
+
+    } catch (error) {
+        return res.status(error.status || 500 ).json({
+            ok:false,
+            msg:error.message || "Ups... hubo un error."
+        })
     }
 
-}
+    return res.send("buscando a Nemo....")
+  },
+  //Aqui dispongo las rutas para trabajar con el CRUD
+  add: function (req, res) {
+    let promGenres = Genres.findAll();
+    let promActors = Actors.findAll();
+
+    Promise.all([promGenres, promActors])
+      .then(([allGenres, allActors]) => {
+        return res.render(path.resolve(__dirname, "..", "views", "moviesAdd"), {
+          allGenres,
+          allActors,
+        });
+      })
+      .catch((error) => res.send(error));
+  },
+  create: function (req, res) {
+    Movies.create({
+      title: req.body.title,
+      rating: req.body.rating,
+      awards: req.body.awards,
+      release_date: req.body.release_date,
+      length: req.body.length,
+      genre_id: req.body.genre_id,
+    })
+      .then(() => {
+        return res.redirect("/movies");
+      })
+      .catch((error) => res.send(error));
+  },
+  edit: function (req, res) {
+    let movieId = req.params.id;
+    let promMovies = Movies.findByPk(movieId, { include: ["genre", "actors"] });
+    let promGenres = Genres.findAll();
+    let promActors = Actors.findAll();
+    Promise.all([promMovies, promGenres, promActors])
+      .then(([Movie, allGenres, allActors]) => {
+        Movie.release_date = moment(Movie.release_date).format("L");
+        return res.render(
+          path.resolve(__dirname, "..", "views", "moviesEdit"),
+          { Movie, allGenres, allActors }
+        );
+      })
+      .catch((error) => res.send(error));
+  },
+  update: function (req, res) {
+    let movieId = req.params.id;
+    Movies.update(
+      {
+        title: req.body.title,
+        rating: req.body.rating,
+        awards: req.body.awards,
+        release_date: req.body.release_date,
+        length: req.body.length,
+        genre_id: req.body.genre_id,
+      },
+      {
+        where: { id: movieId },
+      }
+    )
+      .then(() => {
+        return res.redirect("/movies");
+      })
+      .catch((error) => res.send(error));
+  },
+  delete: function (req, res) {
+    let movieId = req.params.id;
+    Movies.findByPk(movieId)
+      .then((Movie) => {
+        return res.render(
+          path.resolve(__dirname, "..", "views", "moviesDelete"),
+          { Movie }
+        );
+      })
+      .catch((error) => res.send(error));
+  },
+  destroy: function (req, res) {
+    let movieId = req.params.id;
+    Movies.destroy({ where: { id: movieId }, force: true }) // force: true es para asegurar que se ejecute la acción
+      .then(() => {
+        return res.redirect("/movies");
+      })
+      .catch((error) => res.send(error));
+  },
+};
 
 module.exports = moviesController;
